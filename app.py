@@ -24,6 +24,7 @@ CRASH_TIMEOUT    = 300   # seconds before a silent session is pruned
 POLL_INTERVAL    = 1
 UPDATE_CHECK_INTERVAL = 3600
 
+VERSION = "v0.6"
 REPO    = "wayou/cc-status"
 ICON    = {"idle": "🟢", "working": "🟡", "waiting": "🔴"}
 LABEL   = {"idle": "Idle", "working": "Working", "waiting": "Waiting"}
@@ -64,7 +65,7 @@ def installed_version() -> str:
     try:
         return VERSION_FILE.read_text().strip()
     except Exception:
-        return ""
+        return VERSION
 
 
 def fetch_latest_version() -> str:
