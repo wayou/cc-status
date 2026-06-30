@@ -15,7 +15,7 @@ Multiple concurrent sessions are tracked independently. The most urgent state wi
 ## Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/you/cc-status/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/wayou/cc-status/master/install.sh)
 ```
 
 That's it. The script will:
