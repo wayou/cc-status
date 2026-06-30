@@ -223,13 +223,14 @@ def already_wired(hooks_list, status):
     return False
 
 mapping = {
-    "PreToolUse":       "working",
-    "PostToolUse":      "working --force",
-    "UserPromptSubmit": "working",
-    "SessionStart":     "working",
-    "Stop":             "idle",
-    "SessionEnd":       "remove",
-    "PermissionRequest":"waiting",
+    "PreToolUse":          "working",
+    "PostToolUse":         "working --force",
+    "PostToolUseFailure":  "working --force",
+    "UserPromptSubmit":    "working",
+    "SessionStart":        "working",
+    "Stop":                "idle",
+    "SessionEnd":          "remove",
+    "PermissionRequest":   "waiting",
 }
 
 s.setdefault("hooks", {})
