@@ -145,7 +145,9 @@ import sys, json, time, os
 from pathlib import Path
 
 def main():
-    status = sys.argv[1] if len(sys.argv) > 1 else "idle"
+    args   = sys.argv[1:]
+    force  = "--force" in args
+    status = next((a for a in args if not a.startswith("-")), "idle")
     try:
         data = json.load(sys.stdin)
         session_id = data.get("session_id", "default")
@@ -167,7 +169,7 @@ def main():
     current_urgency = URGENCY.get(current.get("status", "idle"), 2)
     new_urgency = URGENCY.get(status, 2)
     age = now - current.get("updated_at", 0)
-    if new_urgency > current_urgency and age < 3:
+    if not force and new_urgency > current_urgency and age < 3:
         return
     state["sessions"][session_id] = {"status": status, "updated_at": now}
     state["sessions"] = {k: v for k, v in state["sessions"].items()
@@ -222,7 +224,7 @@ def already_wired(hooks_list, status):
 
 mapping = {
     "PreToolUse":       "working",
-    "PostToolUse":      "working",
+    "PostToolUse":      "working --force",
     "UserPromptSubmit": "working",
     "SessionStart":     "working",
     "Stop":             "idle",
