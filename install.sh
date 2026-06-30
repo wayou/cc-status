@@ -218,9 +218,8 @@ mapping = {
     "UserPromptSubmit": "working",
     "SessionStart":     "working",
     "Stop":             "idle",
-    "SessionEnd":       "idle",
+    "SessionEnd":       "remove",
     "PermissionRequest":"waiting",
-    "Notification":     "waiting",
 }
 
 s.setdefault("hooks", {})
