@@ -15,7 +15,7 @@ Multiple concurrent sessions are tracked independently. The most urgent state wi
 ## Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wayou/cc-status/master/install.sh)
+bash <(curl -fsSL https://github.com/wayou/cc-status/releases/latest/download/install.sh)
 ```
 
 That's it. The script will:
@@ -27,6 +27,22 @@ That's it. The script will:
 - Start the app immediately — look for 🟢 in your menu bar
 
 **Requirements:** macOS, Python 3.8+, [Claude Code](https://claude.ai/code) CLI
+
+### Pin a specific version
+
+```bash
+bash <(curl -fsSL https://github.com/wayou/cc-status/releases/download/v0.1/install.sh) v0.1
+```
+
+Useful for rolling back if a newer release causes a regression.
+
+### Update
+
+```bash
+bash install.sh --update
+```
+
+Or click **"Update to vX.X…"** in the tray menu — it checks GitHub on launch and every hour.
 
 ---
 
