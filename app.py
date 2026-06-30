@@ -20,6 +20,7 @@ POLL_INTERVAL = 1
 
 ICON  = {"idle": "🟢", "working": "🟡", "waiting": "🔴"}
 LABEL = {"idle": "Idle", "working": "Working", "waiting": "Waiting"}
+# Lower number = higher priority
 URGENCY = {"waiting": 0, "working": 1, "idle": 2}
 
 # ── single-instance lock ──────────────────────────────────────────────────────
@@ -33,10 +34,7 @@ except BlockingIOError:
 def winning_status(sessions: dict) -> str:
     if not sessions:
         return "idle"
-    statuses = [v["status"] for v in sessions.values()]
-    if "waiting" in statuses: return "waiting"
-    if "working" in statuses: return "working"
-    return "idle"
+    return min(sessions.values(), key=lambda v: URGENCY[v["status"]])["status"]
 
 
 class CCStatusApp(rumps.App):
