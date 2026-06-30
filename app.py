@@ -84,70 +84,31 @@ class CCStatusApp(rumps.App):
     def __init__(self):
         super().__init__(ICON["idle"], quit_button=None)
         self._quit_item   = rumps.MenuItem("Quit", callback=lambda _: rumps.quit_application())
-        self._update_item = rumps.MenuItem("Check for Updates…", callback=self._on_check_update)
+        self._update_item = None   # only exists when an update is available
         self._latest_version = ""
         self.menu = [self._quit_item]
         self._prev_sessions_key = None
-        self._start_update_checker()
+        threading.Thread(target=self._update_check_loop, daemon=True).start()
 
     # ── update checker ────────────────────────────────────────────────────────
-
-    def _start_update_checker(self):
-        t = threading.Thread(target=self._update_check_loop, daemon=True)
-        t.start()
 
     def _update_check_loop(self):
         while True:
             latest = fetch_latest_version()
-            if latest:
+            current = installed_version()
+            if latest and latest != current:
                 self._latest_version = latest
-                self._refresh_update_item()
+                self._update_item = rumps.MenuItem(
+                    f"⬆️  Update to {latest}",
+                    callback=self._on_install_update,
+                )
+            else:
+                self._latest_version = latest
+                self._update_item = None
             time.sleep(UPDATE_CHECK_INTERVAL)
 
-    def _refresh_update_item(self):
-        current = installed_version()
-        latest  = self._latest_version
-        if latest and current and latest != current:
-            self._update_item.title = f"Update to {latest}…"
-        elif latest and current and latest == current:
-            self._update_item.title = f"Up to date ({current})"
-        elif latest:
-            self._update_item.title = f"Install {latest}…"
-        else:
-            self._update_item.title = "Check for Updates…"
-
-    def _on_check_update(self, _):
-        current = installed_version()
-        latest  = self._latest_version
-
-        # If we haven't checked yet, do it now synchronously
-        if not latest:
-            latest = fetch_latest_version()
-            self._latest_version = latest
-            self._refresh_update_item()
-
-        if not latest:
-            rumps.alert("Update check failed", "Could not reach GitHub. Check your connection.")
-            return
-
-        if current and latest == current:
-            rumps.alert("Already up to date", f"cc-status {current} is the latest version.")
-            return
-
-        action = "update to" if current else "install"
-        msg = f"cc-status {latest} is available."
-        if current:
-            msg += f"\n\nCurrently installed: {current}"
-        msg += "\n\nA Terminal window will open to complete the update."
-
-        response = rumps.alert(
-            title=f"Update available: {latest}",
-            message=msg,
-            ok="Update",
-            cancel="Later",
-        )
-        if response:
-            self._run_update(latest)
+    def _on_install_update(self, _):
+        self._run_update(self._latest_version)
 
     def _run_update(self, version: str):
         # Open a new Terminal window and run the update inside it
@@ -206,8 +167,9 @@ class CCStatusApp(rumps.App):
             self.menu.add(empty)
 
         self.menu.add(None)              # separator
-        self.menu.add(self._update_item)
-        self.menu.add(None)              # separator
+        if self._update_item:
+            self.menu.add(self._update_item)
+            self.menu.add(None)
         self.menu.add(self._quit_item)
 
 
