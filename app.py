@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 STATUS_FILE   = Path.home() / ".claude" / "cc-status.json"
+SESSIONS_DIR  = Path.home() / ".claude" / "sessions"
 LOCK_FILE     = "/tmp/cc-status.lock"
 CRASH_TIMEOUT = 300  # prune sessions silent for 5 min (crash recovery)
 POLL_INTERVAL = 1
@@ -29,6 +30,24 @@ try:
     fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:
     sys.exit(0)
+
+
+def load_session_names() -> dict:
+    """Return {sessionId: name} from ~/.claude/sessions/*.json."""
+    names = {}
+    try:
+        for f in SESSIONS_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text())
+                sid  = data.get("sessionId")
+                name = data.get("name")
+                if sid and name:
+                    names[sid] = name
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return names
 
 
 def winning_status(sessions: dict) -> str:
@@ -70,6 +89,7 @@ class CCStatusApp(rumps.App):
         self.menu.clear()
 
         if sessions:
+            names = load_session_names()
             # Sort: urgency first, then oldest first (stable "first session" at top)
             ordered = sorted(
                 sessions.items(),
@@ -77,7 +97,8 @@ class CCStatusApp(rumps.App):
             )
             for sid, info in ordered:
                 status = info["status"]
-                label  = f"{ICON[status]}  {sid[:8]}  {LABEL[status]}"
+                title  = names.get(sid, sid[:8])
+                label  = f"{ICON[status]}  {title}  {LABEL[status]}"
                 item   = rumps.MenuItem(label)
                 item._menuitem.setEnabled_(False)
                 self.menu.add(item)
