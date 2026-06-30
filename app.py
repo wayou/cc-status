@@ -11,14 +11,20 @@ import fcntl
 import rumps
 import json
 import time
+import threading
+import subprocess
+import urllib.request
 from pathlib import Path
 
 STATUS_FILE   = Path.home() / ".claude" / "cc-status.json"
 SESSIONS_DIR  = Path.home() / ".claude" / "sessions"
+VERSION_FILE  = Path.home() / ".cc-status" / "VERSION"
 LOCK_FILE     = "/tmp/cc-status.lock"
 CRASH_TIMEOUT = 300  # prune sessions silent for 5 min (crash recovery)
 POLL_INTERVAL = 1
+UPDATE_CHECK_INTERVAL = 3600  # check for updates every hour
 
+REPO = "wayou/cc-status"
 ICON  = {"idle": "🟢", "working": "🟡", "waiting": "🔴"}
 LABEL = {"idle": "Idle", "working": "Working", "waiting": "Waiting"}
 # Lower number = higher priority
@@ -56,12 +62,104 @@ def winning_status(sessions: dict) -> str:
     return min(sessions.values(), key=lambda v: URGENCY[v["status"]])["status"]
 
 
+def installed_version() -> str:
+    try:
+        return VERSION_FILE.read_text().strip()
+    except Exception:
+        return ""
+
+
+def fetch_latest_version() -> str:
+    url = f"https://api.github.com/repos/{REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "cc-status"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            return data.get("tag_name", "")
+    except Exception:
+        return ""
+
+
 class CCStatusApp(rumps.App):
     def __init__(self):
         super().__init__(ICON["idle"], quit_button=None)
-        self._quit_item = rumps.MenuItem("Quit", callback=lambda _: rumps.quit_application())
+        self._quit_item   = rumps.MenuItem("Quit", callback=lambda _: rumps.quit_application())
+        self._update_item = rumps.MenuItem("Check for Updates…", callback=self._on_check_update)
+        self._latest_version = ""
         self.menu = [self._quit_item]
         self._prev_sessions_key = None
+        self._start_update_checker()
+
+    # ── update checker ────────────────────────────────────────────────────────
+
+    def _start_update_checker(self):
+        t = threading.Thread(target=self._update_check_loop, daemon=True)
+        t.start()
+
+    def _update_check_loop(self):
+        while True:
+            latest = fetch_latest_version()
+            if latest:
+                self._latest_version = latest
+                self._refresh_update_item()
+            time.sleep(UPDATE_CHECK_INTERVAL)
+
+    def _refresh_update_item(self):
+        current = installed_version()
+        latest  = self._latest_version
+        if latest and current and latest != current:
+            self._update_item.title = f"Update to {latest}…"
+        elif latest and current and latest == current:
+            self._update_item.title = f"Up to date ({current})"
+        elif latest:
+            self._update_item.title = f"Install {latest}…"
+        else:
+            self._update_item.title = "Check for Updates…"
+
+    def _on_check_update(self, _):
+        current = installed_version()
+        latest  = self._latest_version
+
+        # If we haven't checked yet, do it now synchronously
+        if not latest:
+            latest = fetch_latest_version()
+            self._latest_version = latest
+            self._refresh_update_item()
+
+        if not latest:
+            rumps.alert("Update check failed", "Could not reach GitHub. Check your connection.")
+            return
+
+        if current and latest == current:
+            rumps.alert("Already up to date", f"cc-status {current} is the latest version.")
+            return
+
+        action = "update to" if current else "install"
+        msg = f"cc-status {latest} is available."
+        if current:
+            msg += f"\n\nCurrently installed: {current}"
+        msg += "\n\nA Terminal window will open to complete the update."
+
+        response = rumps.alert(
+            title=f"Update available: {latest}",
+            message=msg,
+            ok="Update",
+            cancel="Later",
+        )
+        if response:
+            self._run_update(latest)
+
+    def _run_update(self, version: str):
+        # Open a new Terminal window and run the update inside it
+        script = (
+            f'tell application "Terminal"\n'
+            f'    activate\n'
+            f'    do script "bash <(curl -fsSL https://github.com/{REPO}/releases/download/{version}/install.sh) {version}"\n'
+            f'end tell'
+        )
+        subprocess.Popen(["osascript", "-e", script])
+
+    # ── session poller ────────────────────────────────────────────────────────
 
     @rumps.timer(POLL_INTERVAL)
     def _poll(self, _):
@@ -107,7 +205,9 @@ class CCStatusApp(rumps.App):
             empty._menuitem.setEnabled_(False)
             self.menu.add(empty)
 
-        self.menu.add(None)          # separator
+        self.menu.add(None)              # separator
+        self.menu.add(self._update_item)
+        self.menu.add(None)              # separator
         self.menu.add(self._quit_item)
 
 
