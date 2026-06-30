@@ -222,6 +222,7 @@ def already_wired(hooks_list, status):
 
 mapping = {
     "PreToolUse":       "working",
+    "PostToolUse":      "working",
     "UserPromptSubmit": "working",
     "SessionStart":     "working",
     "Stop":             "idle",
