@@ -162,6 +162,13 @@ def main():
     except Exception:
         state = {"sessions": {}}
 
+    URGENCY = {"waiting": 0, "working": 1, "idle": 2}
+    current = state["sessions"].get(session_id, {})
+    current_urgency = URGENCY.get(current.get("status", "idle"), 2)
+    new_urgency = URGENCY.get(status, 2)
+    age = now - current.get("updated_at", 0)
+    if new_urgency > current_urgency and age < 3:
+        return
     state["sessions"][session_id] = {"status": status, "updated_at": now}
     state["sessions"] = {k: v for k, v in state["sessions"].items()
                          if now - v.get("updated_at", 0) < 300}
