@@ -162,6 +162,11 @@ class CCStatusApp(rumps.App):
         if self._update_item:
             self.menu.add(self._update_item)
             self.menu.add(None)
+        ver = installed_version()
+        if ver:
+            ver_item = rumps.MenuItem(f"cc-status {ver}")
+            ver_item._menuitem.setEnabled_(False)
+            self.menu.add(ver_item)
         self.menu.add(self._quit_item)
 
 
