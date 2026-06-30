@@ -12,6 +12,16 @@ Multiple concurrent sessions are tracked independently. The most urgent state wi
 
 ---
 
+## Quick install
+
+```bash
+git clone https://github.com/you/cc-status.git && bash cc-status/install.sh
+```
+
+That's it. The script installs dependencies, wires the Claude Code hooks, and starts the app via a LaunchAgent (auto-restarts on login).
+
+---
+
 ## Requirements
 
 - macOS
