@@ -141,7 +141,7 @@ cp "$REPO_DIR/../../../.claude/hooks/cc-status.py" "$HOOK_SCRIPT" 2>/dev/null \
         # write it inline if not bundled alongside
         cat > "$HOOK_SCRIPT" << 'HOOKEOF'
 #!/usr/bin/env python3
-import sys, json, time, os
+import sys, json, time, os, fcntl
 from pathlib import Path
 
 def main():
@@ -155,33 +155,46 @@ def main():
         session_id = "default"
 
     status_file = Path.home() / ".claude" / "cc-status.json"
+    lock_file   = Path(str(status_file) + ".lock")
     now = int(time.time())
 
-    try:
-        state = json.loads(status_file.read_text())
-        if "sessions" not in state or not isinstance(state["sessions"], dict):
-            raise ValueError
-    except Exception:
-        state = {"sessions": {}}
+    # Hooks fire as concurrent async subprocesses, so serialize the
+    # read-modify-write cycle — otherwise a slower writer can silently
+    # clobber a fresher status written by an overlapping invocation.
+    with open(lock_file, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
 
-    URGENCY = {"waiting": 0, "working": 1, "idle": 2}
-    current = state["sessions"].get(session_id, {})
-    current_urgency = URGENCY.get(current.get("status", "idle"), 2)
-    new_urgency = URGENCY.get(status, 2)
-    age = now - current.get("updated_at", 0)
-    if not force and new_urgency > current_urgency and age < 3:
-        return
-    state["sessions"][session_id] = {"status": status, "updated_at": now}
-    state["sessions"] = {k: v for k, v in state["sessions"].items()
-                         if now - v.get("updated_at", 0) < 300}
+        try:
+            state = json.loads(status_file.read_text())
+            if "sessions" not in state or not isinstance(state["sessions"], dict):
+                raise ValueError
+        except Exception:
+            state = {"sessions": {}}
 
-    tmp = str(status_file) + ".tmp"
-    try:
-        with open(tmp, "w") as f:
-            json.dump(state, f)
-        os.replace(tmp, status_file)
-    except Exception:
-        pass
+        URGENCY = {"waiting": 0, "working": 1, "idle": 2}
+        if status == "remove":
+            state["sessions"].pop(session_id, None)
+        else:
+            current = state["sessions"].get(session_id, {})
+            current_urgency = URGENCY.get(current.get("status", "idle"), 2)
+            new_urgency = URGENCY.get(status, 2)
+            # Without --force, never let a less-urgent update clobber a more-urgent
+            # one. No time-based exception: a stale write leaking through after a
+            # few seconds is what made the tray look "stuck" before flipping.
+            if not force and new_urgency > current_urgency:
+                return
+            state["sessions"][session_id] = {"status": status, "updated_at": now}
+
+        state["sessions"] = {k: v for k, v in state["sessions"].items()
+                             if now - v.get("updated_at", 0) < 300}
+
+        tmp = str(status_file) + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(state, f)
+            os.replace(tmp, status_file)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
@@ -215,11 +228,16 @@ def make_hook(status):
         "timeout": 5,
     }
 
-def already_wired(hooks_list, status):
+def find_cc_status_hook(hooks_list):
     for group in hooks_list:
         for h in group.get("hooks", []):
-            if "cc-status.py" in h.get("command", "") and status in h.get("command", ""):
-                return True
+            if "cc-status.py" in h.get("command", ""):
+                yield h
+
+def already_wired(hooks_list, status):
+    for h in find_cc_status_hook(hooks_list):
+        if status in h.get("command", ""):
+            return True
     return False
 
 mapping = {
@@ -228,13 +246,24 @@ mapping = {
     "PostToolUseFailure":  "working --force",
     "UserPromptSubmit":    "working",
     "SessionStart":        "working",
-    "Stop":                "idle",
+    "Stop":                "idle --force",
     "SessionEnd":          "remove",
     "PermissionRequest":   "waiting",
 }
 
 s.setdefault("hooks", {})
-added = []
+added   = []
+upgraded = []
+
+# Migrate a pre-existing bare "idle" Stop hook (no --force) to "idle --force":
+# the urgency guard used to self-heal a stuck status after a few seconds, but
+# that's exactly what made the tray look laggy, so it's gone now — Stop must
+# force its transition instead.
+for h in find_cc_status_hook(s["hooks"].get("Stop", [])):
+    if h.get("command", "").rstrip().endswith("cc-status.py idle"):
+        h["command"] += " --force"
+        upgraded.append("Stop")
+
 for event, status in mapping.items():
     if not already_wired(s["hooks"].get(event, []), status):
         s["hooks"].setdefault(event, []).append(
@@ -245,7 +274,9 @@ for event, status in mapping.items():
 settings_path.write_text(json.dumps(s, indent=4))
 if added:
     print(f"  Wired hooks for: {', '.join(added)}")
-else:
+if upgraded:
+    print(f"  Upgraded hooks for: {', '.join(upgraded)}")
+if not added and not upgraded:
     print("  Hooks already present — nothing changed.")
 PYEOF
 

@@ -21,10 +21,11 @@ SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 VERSION_FILE = Path.home() / ".cc-status" / "VERSION"
 LOCK_FILE    = "/tmp/cc-status.lock"
 CRASH_TIMEOUT    = 300   # seconds before a silent session is pruned
-POLL_INTERVAL    = 1
+POLL_INTERVAL_ACTIVE = 0.3   # while any session is tracked — catch transitions fast
+POLL_INTERVAL_IDLE   = 2     # nothing to watch — save CPU/battery
 UPDATE_CHECK_INTERVAL = 3600
 
-VERSION = "v0.6"
+VERSION = "v0.6.2"
 REPO    = "wayou/cc-status"
 ICON    = {"idle": "🟢", "working": "🟡", "waiting": "🔴"}
 LABEL   = {"idle": "Idle", "working": "Working", "waiting": "Waiting"}
@@ -86,6 +87,8 @@ class CCStatusApp(rumps.App):
         self._latest_version = ""
         self.menu = [self._quit_item]
         self._prev_sessions_key = None
+        self._poll_timer = rumps.Timer(self._poll, POLL_INTERVAL_IDLE)
+        self._poll_timer.start()
         threading.Thread(target=self._update_check_loop, daemon=True).start()
 
     # ── update checker ────────────────────────────────────────────────────────
@@ -119,7 +122,6 @@ class CCStatusApp(rumps.App):
 
     # ── session poller ────────────────────────────────────────────────────────
 
-    @rumps.timer(POLL_INTERVAL)
     def _poll(self, _):
         try:
             state = json.loads(STATUS_FILE.read_text())
@@ -131,6 +133,13 @@ class CCStatusApp(rumps.App):
             sessions = {}
         except Exception:
             return
+
+        # Poll fast while there's something to catch a transition on, and back
+        # off when idle so the app isn't waking up every fraction of a second
+        # for nothing.
+        want_interval = POLL_INTERVAL_ACTIVE if sessions else POLL_INTERVAL_IDLE
+        if self._poll_timer.interval != want_interval:
+            self._poll_timer.interval = want_interval
 
         cache_key = json.dumps(sessions, sort_keys=True)
         if cache_key == self._prev_sessions_key:
